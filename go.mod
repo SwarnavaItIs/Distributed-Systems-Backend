@@ -1,3 +1,3 @@
-module github.com/swarnava/Distributed_Marketplace_Backend
+module github.com/swarnava/dmb
 
 go 1.26.3

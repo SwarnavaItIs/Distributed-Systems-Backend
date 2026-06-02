@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: dmb_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: dmb
+      POSTGRES_USER: dmb_user
+      POSTGRES_PASSWORD: dmb_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - dmb_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  dmb_postgres_data:
