@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package listing.v1;
+
+option go_package = "github.com/swarnava/dmb/gen/go/listing/v1;listingv1";
+
+service ListingService {
+  rpc CreateListing(CreateListingRequest) returns (CreateListingResponse);
+  rpc GetListing(GetListingRequest) returns (GetListingResponse);
+}
+
+message CreateListingRequest {
+  string seller_id = 1;
+  string title = 2;
+  string description = 3;
+  int64 category_id = 4;
+  int64 price_cents = 5;
+}
+
+message CreateListingResponse {
+  Listing listing = 1;
+}
+
+message GetListingRequest {
+  string id = 1;
+}
+
+message GetListingResponse {
+  Listing listing = 1;
+}
+
+message Listing {
+  string id = 1;
+  string seller_id = 2;
+  string title = 3;
+  string description = 4;
+  int64 category_id = 5;
+  int64 price_cents = 6;
+  string status = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
