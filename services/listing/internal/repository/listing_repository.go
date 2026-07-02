@@ -69,7 +69,7 @@ func (r *ListingRepository) GetListing(ctx context.Context, id string) (*model.L
 			id,
 			seller_id,
 			title,
-			description,
+			COALESCE(description, '') AS description,
 			category_id,
 			price_cents,
 			status,
