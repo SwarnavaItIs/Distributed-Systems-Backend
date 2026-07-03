@@ -3,21 +3,28 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	searchcache "github.com/swarnava/dmb/services/search/internal/cache"
 	"github.com/swarnava/dmb/services/search/internal/model"
 	"github.com/swarnava/dmb/services/search/internal/repository"
 )
 
 type SearchHandler struct {
-	repo *repository.SearchRepository
+	repo  *repository.SearchRepository
+	cache *searchcache.SearchCache
 }
 
-func NewSearchHandler(repo *repository.SearchRepository) *SearchHandler {
+func NewSearchHandler(
+	repo *repository.SearchRepository,
+	cache *searchcache.SearchCache,
+) *SearchHandler {
 	return &SearchHandler{
-		repo: repo,
+		repo:  repo,
+		cache: cache,
 	}
 }
 
@@ -25,6 +32,7 @@ type SearchResponse struct {
 	Filters model.SearchFilters   `json:"filters"`
 	Results []model.SearchListing `json:"results"`
 	Count   int                   `json:"count"`
+	Source  string                `json:"source"`
 }
 
 func (h *SearchHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,19 +94,41 @@ func (h *SearchHandler) SearchHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
+	if h.cache != nil {
+		cachedResults, found, err := h.cache.Get(ctx, filters)
+		if err == nil && found {
+			writeJSON(w, http.StatusOK, SearchResponse{
+				Filters: filters,
+				Results: cachedResults,
+				Count:   len(cachedResults),
+				Source:  "redis_cache",
+			})
+			return
+		}
+
+		if err != nil {
+			fmt.Println("cache read failed:", err)
+		}
+	}
+
 	results, err := h.repo.SearchListings(ctx, filters)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to search listings")
 		return
 	}
 
-	response := SearchResponse{
+	if h.cache != nil {
+		if err := h.cache.Set(ctx, filters, results); err != nil {
+			fmt.Println("cache write failed:", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, SearchResponse{
 		Filters: filters,
 		Results: results,
 		Count:   len(results),
-	}
-
-	writeJSON(w, http.StatusOK, response)
+		Source:  "postgres",
+	})
 }
 
 func parseOptionalInt64(value string) (int64, error) {

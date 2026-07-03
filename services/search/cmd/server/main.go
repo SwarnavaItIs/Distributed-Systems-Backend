@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
+	searchcache "github.com/swarnava/dmb/services/search/internal/cache"
 	"github.com/swarnava/dmb/services/search/internal/config"
 	"github.com/swarnava/dmb/services/search/internal/db"
 	"github.com/swarnava/dmb/services/search/internal/handler"
@@ -24,8 +27,19 @@ func main() {
 
 	fmt.Println("Database connected successfully")
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	searchCache := searchcache.NewSearchCache(cfg.RedisAddr, cfg.SearchCacheTTL)
+	if err := searchCache.Ping(ctx); err != nil {
+		log.Fatalf("redis connection failed: %v", err)
+	}
+	defer searchCache.Close()
+
+	fmt.Println("Redis connected successfully")
+
 	searchRepo := repository.NewSearchRepository(pool)
-	searchHandler := handler.NewSearchHandler(searchRepo)
+	searchHandler := handler.NewSearchHandler(searchRepo, searchCache)
 
 	mux := http.NewServeMux()
 
