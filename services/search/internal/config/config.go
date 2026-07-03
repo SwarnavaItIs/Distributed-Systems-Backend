@@ -3,7 +3,8 @@ package config
 import "os"
 
 type Config struct {
-	HTTPPort string
+	HTTPPort    string
+	DatabaseURL string
 }
 
 func Load() Config {
@@ -12,7 +13,13 @@ func Load() Config {
 		httpPort = "8081"
 	}
 
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = "postgres://dmb_user:dmb_password@localhost:5432/dmb?sslmode=disable"
+	}
+
 	return Config{
-		HTTPPort: httpPort,
+		HTTPPort:    httpPort,
+		DatabaseURL: databaseURL,
 	}
 }

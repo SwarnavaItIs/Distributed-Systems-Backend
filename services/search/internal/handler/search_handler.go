@@ -1,31 +1,33 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/swarnava/dmb/services/search/internal/model"
+	"github.com/swarnava/dmb/services/search/internal/repository"
 )
 
-type SearchFilters struct {
-	CategoryID int64 `json:"category_id,omitempty"`
-	MinPrice   int64 `json:"min_price,omitempty"`
-	MaxPrice   int64 `json:"max_price,omitempty"`
+type SearchHandler struct {
+	repo *repository.SearchRepository
 }
 
-type SearchListing struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	CategoryID  int64  `json:"category_id"`
-	PriceCents  int64  `json:"price_cents"`
-	Status      string `json:"status"`
+func NewSearchHandler(repo *repository.SearchRepository) *SearchHandler {
+	return &SearchHandler{
+		repo: repo,
+	}
 }
 
 type SearchResponse struct {
-	Filters SearchFilters   `json:"filters"`
-	Results []SearchListing `json:"results"`
+	Filters model.SearchFilters   `json:"filters"`
+	Results []model.SearchListing `json:"results"`
+	Count   int                   `json:"count"`
 }
 
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
+func (h *SearchHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -37,7 +39,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func SearchHandler(w http.ResponseWriter, r *http.Request) {
+func (h *SearchHandler) SearchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -63,13 +65,37 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, err := parseOptionalInt32(query.Get("limit"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "limit must be a valid integer")
+		return
+	}
+
+	if minPrice > 0 && maxPrice > 0 && minPrice > maxPrice {
+		writeError(w, http.StatusBadRequest, "min_price cannot be greater than max_price")
+		return
+	}
+
+	filters := model.SearchFilters{
+		CategoryID: categoryID,
+		MinPrice:   minPrice,
+		MaxPrice:   maxPrice,
+		Limit:      limit,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	results, err := h.repo.SearchListings(ctx, filters)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to search listings")
+		return
+	}
+
 	response := SearchResponse{
-		Filters: SearchFilters{
-			CategoryID: categoryID,
-			MinPrice:   minPrice,
-			MaxPrice:   maxPrice,
-		},
-		Results: []SearchListing{},
+		Filters: filters,
+		Results: results,
+		Count:   len(results),
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -81,6 +107,19 @@ func parseOptionalInt64(value string) (int64, error) {
 	}
 
 	return strconv.ParseInt(value, 10, 64)
+}
+
+func parseOptionalInt32(value string) (int32, error) {
+	if value == "" {
+		return 20, nil
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+
+	return int32(parsed), nil
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, data any) {
