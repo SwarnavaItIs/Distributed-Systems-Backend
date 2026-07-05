@@ -7,6 +7,7 @@ import (
 
 	"github.com/swarnava/dmb/services/gateway/internal/config"
 	"github.com/swarnava/dmb/services/gateway/internal/handler"
+	"github.com/swarnava/dmb/services/gateway/internal/middleware"
 )
 
 func main() {
@@ -22,7 +23,11 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", gatewayHandler.HealthHandler)
-	mux.HandleFunc("/api/search", gatewayHandler.SearchProxyHandler)
+
+	mux.HandleFunc(
+		"/api/search",
+		middleware.JWTAuth(cfg.JWTSecret, gatewayHandler.SearchProxyHandler),
+	)
 
 	addr := ":" + cfg.HTTPPort
 

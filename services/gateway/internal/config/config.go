@@ -5,6 +5,7 @@ import "os"
 type Config struct {
 	HTTPPort         string
 	SearchServiceURL string
+	JWTSecret        string
 }
 
 func Load() Config {
@@ -18,8 +19,14 @@ func Load() Config {
 		searchServiceURL = "http://localhost:8081"
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "dev_secret_change_me"
+	}
+
 	return Config{
 		HTTPPort:         httpPort,
 		SearchServiceURL: searchServiceURL,
+		JWTSecret:        jwtSecret,
 	}
 }
