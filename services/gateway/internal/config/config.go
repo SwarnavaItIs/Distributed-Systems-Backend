@@ -1,11 +1,18 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"time"
+)
 
 type Config struct {
 	HTTPPort         string
 	SearchServiceURL string
 	JWTSecret        string
+	RedisAddr        string
+	RateLimitMax     int64
+	RateLimitWindow  time.Duration
 }
 
 func Load() Config {
@@ -24,9 +31,33 @@ func Load() Config {
 		jwtSecret = "dev_secret_change_me"
 	}
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	rateLimitMax := int64(100)
+	if value := os.Getenv("RATE_LIMIT_MAX"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err == nil && parsed > 0 {
+			rateLimitMax = parsed
+		}
+	}
+
+	rateLimitWindowSeconds := 60
+	if value := os.Getenv("RATE_LIMIT_WINDOW_SECONDS"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err == nil && parsed > 0 {
+			rateLimitWindowSeconds = parsed
+		}
+	}
+
 	return Config{
 		HTTPPort:         httpPort,
 		SearchServiceURL: searchServiceURL,
 		JWTSecret:        jwtSecret,
+		RedisAddr:        redisAddr,
+		RateLimitMax:     rateLimitMax,
+		RateLimitWindow:  time.Duration(rateLimitWindowSeconds) * time.Second,
 	}
 }
