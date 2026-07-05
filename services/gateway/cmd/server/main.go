@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/swarnava/dmb/services/gateway/internal/client"
 	"github.com/swarnava/dmb/services/gateway/internal/config"
 	"github.com/swarnava/dmb/services/gateway/internal/handler"
 	"github.com/swarnava/dmb/services/gateway/internal/middleware"
@@ -25,6 +26,16 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	listingClient, listingConn, err := client.NewListingClient(ctx, cfg.ListingServiceAddr)
+	if err != nil {
+		log.Fatalf("failed to create listing client: %v", err)
+	}
+	defer listingConn.Close()
+
+	fmt.Println("Connected to Listing Service:", cfg.ListingServiceAddr)
+
+	listingHandler := handler.NewListingHandler(listingClient)
+
 	rateLimiter := middleware.NewRateLimiter(
 		cfg.RedisAddr,
 		cfg.RateLimitMax,
@@ -42,17 +53,35 @@ func main() {
 
 	mux.HandleFunc("/health", gatewayHandler.HealthHandler)
 
-	protectedSearchHandler := middleware.JWTAuth(
-		cfg.JWTSecret,
-		rateLimiter.Limit(gatewayHandler.SearchProxyHandler),
+	mux.HandleFunc(
+		"/api/search",
+		middleware.JWTAuth(
+			cfg.JWTSecret,
+			rateLimiter.Limit(gatewayHandler.SearchProxyHandler),
+		),
 	)
 
-	mux.HandleFunc("/api/search", protectedSearchHandler)
+	mux.HandleFunc(
+		"/api/listings",
+		middleware.JWTAuth(
+			cfg.JWTSecret,
+			rateLimiter.Limit(listingHandler.CreateListingHandler),
+		),
+	)
+
+	mux.HandleFunc(
+		"/api/listings/",
+		middleware.JWTAuth(
+			cfg.JWTSecret,
+			rateLimiter.Limit(listingHandler.GetListingHandler),
+		),
+	)
 
 	addr := ":" + cfg.HTTPPort
 
 	fmt.Println("API Gateway listening on port:", cfg.HTTPPort)
 	fmt.Println("Proxying search requests to:", cfg.SearchServiceURL)
+	fmt.Println("Routing listing requests to:", cfg.ListingServiceAddr)
 	fmt.Println("Rate limit:", cfg.RateLimitMax, "requests per", cfg.RateLimitWindow)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {

@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	HTTPPort         string
-	SearchServiceURL string
-	JWTSecret        string
-	RedisAddr        string
-	RateLimitMax     int64
-	RateLimitWindow  time.Duration
+	HTTPPort           string
+	SearchServiceURL   string
+	ListingServiceAddr string
+	JWTSecret          string
+	RedisAddr          string
+	RateLimitMax       int64
+	RateLimitWindow    time.Duration
 }
 
 func Load() Config {
@@ -24,6 +25,11 @@ func Load() Config {
 	searchServiceURL := os.Getenv("SEARCH_SERVICE_URL")
 	if searchServiceURL == "" {
 		searchServiceURL = "http://localhost:8081"
+	}
+
+	listingServiceAddr := os.Getenv("LISTING_SERVICE_ADDR")
+	if listingServiceAddr == "" {
+		listingServiceAddr = "localhost:50051"
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -53,11 +59,12 @@ func Load() Config {
 	}
 
 	return Config{
-		HTTPPort:         httpPort,
-		SearchServiceURL: searchServiceURL,
-		JWTSecret:        jwtSecret,
-		RedisAddr:        redisAddr,
-		RateLimitMax:     rateLimitMax,
-		RateLimitWindow:  time.Duration(rateLimitWindowSeconds) * time.Second,
+		HTTPPort:           httpPort,
+		SearchServiceURL:   searchServiceURL,
+		ListingServiceAddr: listingServiceAddr,
+		JWTSecret:          jwtSecret,
+		RedisAddr:          redisAddr,
+		RateLimitMax:       rateLimitMax,
+		RateLimitWindow:    time.Duration(rateLimitWindowSeconds) * time.Second,
 	}
 }
