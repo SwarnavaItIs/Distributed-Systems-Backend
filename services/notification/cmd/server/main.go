@@ -7,6 +7,7 @@ import (
 
 	"github.com/swarnava/dmb/services/notification/internal/config"
 	"github.com/swarnava/dmb/services/notification/internal/handler"
+	notificationws "github.com/swarnava/dmb/services/notification/internal/ws"
 )
 
 func main() {
@@ -14,12 +15,14 @@ func main() {
 
 	cfg := config.Load()
 
-	notificationHandler := handler.NewNotificationHandler()
+	manager := notificationws.NewManager()
+	notificationHandler := handler.NewNotificationHandler(manager)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", notificationHandler.HealthHandler)
 	mux.HandleFunc("/ws", notificationHandler.WebSocketHandler)
+	mux.HandleFunc("/broadcast", notificationHandler.BroadcastHandler)
 
 	addr := ":" + cfg.HTTPPort
 
