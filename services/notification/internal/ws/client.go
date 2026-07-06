@@ -9,6 +9,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 30 * time.Second
+	maxMessageSize = 512
+)
+
 type Client struct {
 	ID      string
 	Conn    *websocket.Conn
@@ -29,6 +36,14 @@ func NewClient(id string, conn *websocket.Conn, manager *Manager) *Client {
 func (c *Client) ReadPump() {
 	defer c.manager.Unregister(c.ID)
 
+	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+
+	c.Conn.SetPongHandler(func(string) error {
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
@@ -46,10 +61,27 @@ func (c *Client) ReadPump() {
 }
 
 func (c *Client) WritePump() {
-	for message := range c.Send {
-		if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			fmt.Println("websocket write failed:", err)
-			return
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+	defer c.manager.Unregister(c.ID)
+
+	for {
+		select {
+		case message := <-c.Send:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				fmt.Println("websocket write failed:", err)
+				return
+			}
+
+		case <-ticker.C:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				fmt.Println("websocket ping failed:", err)
+				return
+			}
 		}
 	}
 }
@@ -70,7 +102,6 @@ func (c *Client) SendJSON(payload any) {
 
 func (c *Client) Close() {
 	c.once.Do(func() {
-		close(c.Send)
 		c.Conn.Close()
 	})
 }
