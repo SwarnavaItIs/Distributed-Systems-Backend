@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	listingv1 "github.com/swarnava/dmb/gen/go/listing/v1"
 	"github.com/swarnava/dmb/services/listing/internal/model"
@@ -13,14 +14,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type ListingService struct {
-	listingv1.UnimplementedListingServiceServer
-	repo *repository.ListingRepository
+type ListingCreatedPublisher interface {
+	PublishListingCreated(ctx context.Context, listing *model.Listing) error
 }
 
-func NewListingService(repo *repository.ListingRepository) *ListingService {
+type ListingService struct {
+	listingv1.UnimplementedListingServiceServer
+	repo      *repository.ListingRepository
+	publisher ListingCreatedPublisher
+}
+
+func NewListingService(
+	repo *repository.ListingRepository,
+	publisher ListingCreatedPublisher,
+) *ListingService {
 	return &ListingService{
-		repo: repo,
+		repo:      repo,
+		publisher: publisher,
 	}
 }
 
@@ -43,6 +53,12 @@ func (s *ListingService) CreateListing(
 
 	if err := s.repo.CreateListing(ctx, listing); err != nil {
 		return nil, status.Error(codes.Internal, "failed to create listing")
+	}
+
+	if s.publisher != nil {
+		if err := s.publisher.PublishListingCreated(ctx, listing); err != nil {
+			fmt.Println("failed to publish listing.created event:", err)
+		}
 	}
 
 	return &listingv1.CreateListingResponse{

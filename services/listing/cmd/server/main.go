@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	listingv1 "github.com/swarnava/dmb/gen/go/listing/v1"
 	"github.com/swarnava/dmb/services/listing/internal/config"
 	"github.com/swarnava/dmb/services/listing/internal/db"
+	"github.com/swarnava/dmb/services/listing/internal/events"
 	"github.com/swarnava/dmb/services/listing/internal/repository"
 	listingservice "github.com/swarnava/dmb/services/listing/internal/service"
 
@@ -28,13 +31,29 @@ func main() {
 
 	fmt.Println("Database connected successfully")
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	eventPublisher := events.NewPublisher(
+		cfg.RedisAddr,
+		cfg.ListingCreatedEventChannel,
+	)
+
+	if err := eventPublisher.Ping(ctx); err != nil {
+		log.Fatalf("redis connection failed for listing events: %v", err)
+	}
+	defer eventPublisher.Close()
+
+	fmt.Println("Redis connected successfully for listing events")
+	fmt.Println("Publishing listing events to channel:", cfg.ListingCreatedEventChannel)
+
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		log.Fatalf("failed to listen on port %s: %v", cfg.GRPCPort, err)
 	}
 
 	repo := repository.NewListingRepository(pool)
-	listingSvc := listingservice.NewListingService(repo)
+	listingSvc := listingservice.NewListingService(repo, eventPublisher)
 
 	grpcServer := grpc.NewServer()
 

@@ -3,8 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	DatabaseURL string
-	GRPCPort    string
+	DatabaseURL                string
+	GRPCPort                   string
+	RedisAddr                  string
+	ListingCreatedEventChannel string
 }
 
 func Load() Config {
@@ -18,8 +20,20 @@ func Load() Config {
 		grpcPort = "50051"
 	}
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	listingCreatedEventChannel := os.Getenv("REDIS_LISTING_CREATED_CHANNEL")
+	if listingCreatedEventChannel == "" {
+		listingCreatedEventChannel = "listing.created"
+	}
+
 	return Config{
-		DatabaseURL: databaseURL,
-		GRPCPort:    grpcPort,
+		DatabaseURL:                databaseURL,
+		GRPCPort:                   grpcPort,
+		RedisAddr:                  redisAddr,
+		ListingCreatedEventChannel: listingCreatedEventChannel,
 	}
 }
