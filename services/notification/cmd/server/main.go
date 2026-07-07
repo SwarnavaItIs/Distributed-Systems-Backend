@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/swarnava/dmb/services/notification/internal/config"
@@ -19,10 +23,15 @@ func main() {
 	cfg := config.Load()
 
 	manager := notificationws.NewManager()
-	notificationHandler := handler.NewNotificationHandler(manager)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	notificationHandler := handler.NewNotificationHandler(
+		manager,
+	)
+
+	startupCtx, startupCancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
 
 	subscriber := notificationredis.NewSubscriber(
 		cfg.RedisAddr,
@@ -30,32 +39,126 @@ func main() {
 		manager,
 	)
 
-	if err := subscriber.Ping(ctx); err != nil {
-		log.Fatalf("redis connection failed for notification service: %v", err)
+	if err := subscriber.Ping(startupCtx); err != nil {
+		startupCancel()
+		log.Fatalf(
+			"redis connection failed for notification service: %v",
+			err,
+		)
 	}
+
+	startupCancel()
 	defer subscriber.Close()
 
-	fmt.Println("Redis connected successfully for notification service")
+	fmt.Println(
+		"Redis connected successfully for notification service",
+	)
+
+	appCtx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	subscriberErr := make(chan error, 1)
 
 	go func() {
-		if err := subscriber.Start(context.Background()); err != nil {
-			log.Println("redis subscriber stopped:", err)
-		}
+		subscriberErr <- subscriber.Start(appCtx)
 	}()
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", notificationHandler.HealthHandler)
-	mux.HandleFunc("/ws", notificationHandler.WebSocketHandler)
-	mux.HandleFunc("/broadcast", notificationHandler.BroadcastHandler)
+	mux.HandleFunc(
+		"/health",
+		notificationHandler.HealthHandler,
+	)
 
-	addr := ":" + cfg.HTTPPort
+	mux.HandleFunc(
+		"/ws",
+		notificationHandler.WebSocketHandler,
+	)
 
-	fmt.Println("Notification HTTP server listening on port:", cfg.HTTPPort)
-	fmt.Println("WebSocket endpoint: ws://localhost:" + cfg.HTTPPort + "/ws")
-	fmt.Println("Listening to Redis channel:", cfg.RedisChannel)
+	mux.HandleFunc(
+		"/broadcast",
+		notificationHandler.BroadcastHandler,
+	)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("failed to start notification service: %v", err)
+	server := &http.Server{
+		Addr:              ":" + cfg.HTTPPort,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	serverErr := make(chan error, 1)
+
+	go func() {
+		fmt.Println(
+			"Notification HTTP server listening on port:",
+			cfg.HTTPPort,
+		)
+
+		fmt.Println(
+			"WebSocket endpoint: ws://localhost:" +
+				cfg.HTTPPort +
+				"/ws",
+		)
+
+		fmt.Println(
+			"Listening to Redis channel:",
+			cfg.RedisChannel,
+		)
+
+		serverErr <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-appCtx.Done():
+		fmt.Println(
+			"Notification Service shutdown signal received",
+		)
+
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf(
+				"Notification HTTP server stopped unexpectedly: %v",
+				err,
+			)
+		}
+
+	case err := <-subscriberErr:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf(
+				"Redis subscriber stopped unexpectedly: %v",
+				err,
+			)
+		}
+	}
+
+	stop()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf(
+			"Notification HTTP shutdown failed: %v",
+			err,
+		)
+
+		if closeErr := server.Close(); closeErr != nil {
+			log.Printf(
+				"forced Notification HTTP close failed: %v",
+				closeErr,
+			)
+		}
+	}
+
+	manager.CloseAll()
+
+	fmt.Println("Notification Service stopped gracefully")
 }

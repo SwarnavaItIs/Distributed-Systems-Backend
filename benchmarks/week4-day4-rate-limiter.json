@@ -1,0 +1,159 @@
+{
+    "metrics": {
+        "http_req_duration{expected_response:true}": {
+            "p(90)": 21.496819,
+            "p(95)": 22.0994145,
+            "avg": 14.052201960784314,
+            "min": 3.624053,
+            "med": 13.120913,
+            "max": 25.028878
+        },
+        "allowed_responses": {
+            "count": 20,
+            "rate": 263.07747264576346,
+            "thresholds": {
+                "count==20": false
+            }
+        },
+        "http_req_connecting": {
+            "avg": 28.72160845098039,
+            "min": 3.127929,
+            "med": 35.289042,
+            "max": 52.388517,
+            "p(90)": 49.61706,
+            "p(95)": 51.023538
+        },
+        "iteration_duration": {
+            "p(90)": 60.733792699999995,
+            "p(95)": 60.98826165,
+            "avg": 44.64897298000002,
+            "min": 24.698182,
+            "med": 48.670808,
+            "max": 62.828961
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 51,
+            "thresholds": {
+                "rate==0": false
+            },
+            "value": 0
+        },
+        "checks": {
+            "fails": 0,
+            "passes": 150,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "http_req_sending": {
+            "min": 0.029033,
+            "med": 0.117198,
+            "max": 0.293776,
+            "p(90)": 0.181207,
+            "p(95)": 0.21619850000000002,
+            "avg": 0.12703643137254902
+        },
+        "http_req_blocked": {
+            "avg": 29.21921060784314,
+            "min": 4.854782,
+            "med": 35.40619,
+            "max": 52.478716,
+            "p(90)": 50.906234,
+            "p(95)": 51.527489
+        },
+        "iterations": {
+            "count": 50,
+            "rate": 657.6936816144087
+        },
+        "http_req_duration": {
+            "avg": 14.052201960784314,
+            "min": 3.624053,
+            "med": 13.120913,
+            "max": 25.028878,
+            "p(90)": 21.496819,
+            "p(95)": 22.0994145
+        },
+        "unexpected_responses": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "http_req_receiving": {
+            "avg": 0.1411362745098039,
+            "min": 0.023583,
+            "med": 0.072024,
+            "max": 2.312176,
+            "p(90)": 0.184322,
+            "p(95)": 0.29762900000000003
+        },
+        "http_reqs": {
+            "count": 51,
+            "rate": 670.8475552466967
+        },
+        "data_sent": {
+            "rate": 251067.98601948435,
+            "count": 19087
+        },
+        "blocked_responses": {
+            "count": 30,
+            "rate": 394.6162089686452,
+            "thresholds": {
+                "count==30": false
+            }
+        },
+        "http_req_waiting": {
+            "p(95)": 21.9114595,
+            "avg": 13.784029254901958,
+            "min": 3.169291,
+            "med": 12.74123,
+            "max": 24.597065,
+            "p(90)": 21.169973
+        },
+        "data_received": {
+            "count": 26944,
+            "rate": 354417.9711483725
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        }
+    },
+    "setup_data": {},
+    "root_group": {
+            "groups": {},
+            "checks": {
+                    "status is 200 or 429": {
+                        "fails": 0,
+                        "name": "status is 200 or 429",
+                        "path": "::status is 200 or 429",
+                        "id": "66b4fc05285fc67bfe6d7a6e21342225",
+                        "passes": 50
+                    },
+                    "allowed response is valid": {
+                        "name": "allowed response is valid",
+                        "path": "::allowed response is valid",
+                        "id": "afc2077854cf26a9dee76ccd60a340d0",
+                        "passes": 50,
+                        "fails": 0
+                    },
+                    "blocked response contains rate-limit error": {
+                        "name": "blocked response contains rate-limit error",
+                        "path": "::blocked response contains rate-limit error",
+                        "id": "f62a24dfdbb2ba45a6b2220fe7794728",
+                        "passes": 50,
+                        "fails": 0
+                    }
+                },
+            "name": "",
+            "path": "",
+            "id": "d41d8cd98f00b204e9800998ecf8427e"
+        }
+}

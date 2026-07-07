@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/swarnava/dmb/services/gateway/internal/client"
@@ -18,21 +22,33 @@ func main() {
 
 	cfg := config.Load()
 
-	gatewayHandler, err := handler.NewGatewayHandler(cfg.SearchServiceURL)
+	gatewayHandler, err := handler.NewGatewayHandler(
+		cfg.SearchServiceURL,
+	)
 	if err != nil {
 		log.Fatalf("failed to create gateway handler: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	startupCtx, startupCancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
 
-	listingClient, listingConn, err := client.NewListingClient(ctx, cfg.ListingServiceAddr)
+	listingClient, listingConn, err := client.NewListingClient(
+		startupCtx,
+		cfg.ListingServiceAddr,
+	)
 	if err != nil {
+		startupCancel()
 		log.Fatalf("failed to create listing client: %v", err)
 	}
+
 	defer listingConn.Close()
 
-	fmt.Println("Connected to Listing Service:", cfg.ListingServiceAddr)
+	fmt.Println(
+		"Connected to Listing Service:",
+		cfg.ListingServiceAddr,
+	)
 
 	listingHandler := handler.NewListingHandler(listingClient)
 
@@ -42,9 +58,15 @@ func main() {
 		cfg.RateLimitWindow,
 	)
 
-	if err := rateLimiter.Ping(ctx); err != nil {
-		log.Fatalf("redis connection failed for rate limiter: %v", err)
+	if err := rateLimiter.Ping(startupCtx); err != nil {
+		startupCancel()
+		log.Fatalf(
+			"redis connection failed for rate limiter: %v",
+			err,
+		)
 	}
+
+	startupCancel()
 	defer rateLimiter.Close()
 
 	fmt.Println("Redis connected successfully for rate limiter")
@@ -57,7 +79,9 @@ func main() {
 		"/api/search",
 		middleware.JWTAuth(
 			cfg.JWTSecret,
-			rateLimiter.Limit(gatewayHandler.SearchProxyHandler),
+			rateLimiter.Limit(
+				gatewayHandler.SearchProxyHandler,
+			),
 		),
 	)
 
@@ -65,7 +89,9 @@ func main() {
 		"/api/listings",
 		middleware.JWTAuth(
 			cfg.JWTSecret,
-			rateLimiter.Limit(listingHandler.CreateListingHandler),
+			rateLimiter.Limit(
+				listingHandler.CreateListingHandler,
+			),
 		),
 	)
 
@@ -73,18 +99,74 @@ func main() {
 		"/api/listings/",
 		middleware.JWTAuth(
 			cfg.JWTSecret,
-			rateLimiter.Limit(listingHandler.GetListingHandler),
+			rateLimiter.Limit(
+				listingHandler.GetListingHandler,
+			),
 		),
 	)
 
-	addr := ":" + cfg.HTTPPort
-
-	fmt.Println("API Gateway listening on port:", cfg.HTTPPort)
-	fmt.Println("Proxying search requests to:", cfg.SearchServiceURL)
-	fmt.Println("Routing listing requests to:", cfg.ListingServiceAddr)
-	fmt.Println("Rate limit:", cfg.RateLimitMax, "requests per", cfg.RateLimitWindow)
-
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("failed to start api gateway: %v", err)
+	server := &http.Server{
+		Addr:              ":" + cfg.HTTPPort,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	serverErr := make(chan error, 1)
+
+	go func() {
+		fmt.Println(
+			"API Gateway listening on port:",
+			cfg.HTTPPort,
+		)
+		fmt.Println(
+			"Proxying search requests to:",
+			cfg.SearchServiceURL,
+		)
+		fmt.Println(
+			"Routing listing requests to:",
+			cfg.ListingServiceAddr,
+		)
+		fmt.Println(
+			"Rate limit:",
+			cfg.RateLimitMax,
+			"requests per",
+			cfg.RateLimitWindow,
+		)
+
+		serverErr <- server.ListenAndServe()
+	}()
+
+	signalCtx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	select {
+	case <-signalCtx.Done():
+		fmt.Println("API Gateway shutdown signal received")
+
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("Gateway stopped unexpectedly: %v", err)
+		}
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("graceful Gateway shutdown failed: %v", err)
+
+		if closeErr := server.Close(); closeErr != nil {
+			log.Printf("forced Gateway close failed: %v", closeErr)
+		}
+	}
+
+	fmt.Println("API Gateway stopped gracefully")
 }

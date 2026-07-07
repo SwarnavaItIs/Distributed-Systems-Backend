@@ -16,7 +16,11 @@ func NewManager() *Manager {
 
 func (m *Manager) Register(client *Client) {
 	m.clients.Store(client.ID, client)
-	fmt.Println("websocket client connected:", client.ID)
+
+	fmt.Println(
+		"websocket client connected:",
+		client.ID,
+	)
 }
 
 func (m *Manager) Unregister(clientID string) {
@@ -31,24 +35,35 @@ func (m *Manager) Unregister(clientID string) {
 	}
 
 	client.Close()
-	fmt.Println("websocket client disconnected:", clientID)
+
+	fmt.Println(
+		"websocket client disconnected:",
+		clientID,
+	)
 }
 
 func (m *Manager) BroadcastJSON(payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		fmt.Println("failed to marshal broadcast payload:", err)
+		fmt.Println(
+			"failed to marshal broadcast payload:",
+			err,
+		)
 		return
 	}
 
-	m.clients.Range(func(key, value any) bool {
+	m.clients.Range(func(_, value any) bool {
 		client, ok := value.(*Client)
 		if !ok {
 			return true
 		}
 
 		select {
+		case <-client.Done:
+			m.Unregister(client.ID)
+
 		case client.Send <- data:
+
 		default:
 			m.Unregister(client.ID)
 		}
@@ -66,4 +81,20 @@ func (m *Manager) Count() int {
 	})
 
 	return count
+}
+
+func (m *Manager) CloseAll() {
+	fmt.Println(
+		"Closing WebSocket clients:",
+		m.Count(),
+	)
+
+	m.clients.Range(func(_, value any) bool {
+		client, ok := value.(*Client)
+		if ok {
+			m.Unregister(client.ID)
+		}
+
+		return true
+	})
 }

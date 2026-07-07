@@ -1,0 +1,17 @@
+config:
+  target: "ws://host.docker.internal:8082"
+
+  phases:
+    - duration: 20
+      arrivalRate: 25
+      name: "Connect 500 WebSocket clients"
+
+scenarios:
+  - name: "Passive DMB notification client"
+    engine: ws
+
+    flow:
+      - connect: "{{ target }}/ws"
+
+      # Keep each WebSocket connection active for 60 seconds.
+      - think: 60
