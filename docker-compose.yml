@@ -1,23 +1,209 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: dmb_postgres
-    restart: always
+    restart: unless-stopped
+
     environment:
       POSTGRES_DB: dmb
       POSTGRES_USER: dmb_user
       POSTGRES_PASSWORD: dmb_password
+
     ports:
       - "5432:5432"
+
     volumes:
       - dmb_postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U dmb_user -d dmb"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    networks:
+      - dmb_network
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: dmb_redis
-    restart: always
+    restart: unless-stopped
+
     ports:
       - "6379:6379"
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+    networks:
+      - dmb_network
+
+  listing-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: listing
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      DATABASE_URL: postgres://dmb_user:dmb_password@postgres:5432/dmb?sslmode=disable
+      GRPC_PORT: "50051"
+      REDIS_ADDR: redis:6379
+      REDIS_LISTING_CREATED_CHANNEL: listing.created
+
+    ports:
+      - "50051:50051"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - dmb_network
+
+  search-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: search
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      SEARCH_HTTP_PORT: "8081"
+      DATABASE_URL: postgres://dmb_user:dmb_password@postgres:5432/dmb?sslmode=disable
+      REDIS_ADDR: redis:6379
+      SEARCH_CACHE_TTL_SECONDS: ${SEARCH_CACHE_TTL_SECONDS:-5}
+
+    ports:
+      - "8081:8081"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:8081/health"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+    networks:
+      - dmb_network
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: notification
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      NOTIFICATION_HTTP_PORT: "8082"
+      REDIS_ADDR: redis:6379
+      REDIS_LISTING_CREATED_CHANNEL: listing.created
+
+    ports:
+      - "8082:8082"
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:8082/health"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+    networks:
+      - dmb_network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: gateway
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      GATEWAY_HTTP_PORT: "8080"
+      SEARCH_SERVICE_URL: http://search-service:8081
+      LISTING_SERVICE_ADDR: listing-service:50051
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      search-service:
+        condition: service_healthy
+      listing-service:
+        condition: service_started
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:8080/health"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+    networks:
+      - dmb_network
+
 volumes:
   dmb_postgres_data:
+
+networks:
+  dmb_network:
+    driver: bridge
